@@ -15,7 +15,7 @@ public class PostRequest extends Request {
 	
 	@Override
 	public String assembleRequest() {
-		String lRequestLine = mMethod + SPACE + mURI + SPACE + VERSION + CRLF;
+		String lRequestLine = mMethod + SPACE + mPath + SPACE + VERSION + CRLF;
 		// building my header line(s)
 		String lHeaderLines = "";
 		Iterator lIt = mHeaders.entrySet().iterator();

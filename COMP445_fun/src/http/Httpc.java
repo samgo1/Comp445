@@ -1,12 +1,37 @@
 package http;
 
-import org.apache.commons.cli.CommandLine;
+import java.io.BufferedWriter;
+import java.io.Writer;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.net.UnknownHostException;
+
+import org.apache.commons.cli.*;
 
 public class Httpc {
 
-	public static void main(String[] args) {
-		
-		String lArg0 = args[0]; // get | post | help
+	public static void main(String[] aArgs) {
+		// getting the first argument
+		String lArg0 = "";
+		try {
+			lArg0 = aArgs[0]; // get | post | help
+		} catch(ArrayIndexOutOfBoundsException aE) {
+			System.out.print(
+					"ERROR -- no arguments give -- \n\n"+
+					"httpc is a curl-like application but supports HTTP protocol only.\n" + 
+					"Usage:\n" + 
+					" httpc command [arguments]\n" + 
+					"The commands are:\n" + 
+					" get executes a HTTP GET request and prints the response.\n" + 
+					" post executes a HTTP POST request and prints the response.\n" + 
+					" help prints this screen.\n" + 
+					"Use \"httpc help [command]\" for more information about a command."
+					);
+			System.exit(1);
+		}
 		
 		if (lArg0.equals("help")) {
 			/* 
@@ -16,8 +41,8 @@ public class Httpc {
 			 */
 			String lArg1 = "";
 			try {
-				lArg1 = args[1];
-			} catch (ArrayIndexOutOfBoundsException e) {
+				lArg1 = aArgs[1];
+			} catch (ArrayIndexOutOfBoundsException aE) {
 				// we only have one argument print general message and exit
 				System.out.print(
 						"httpc is a curl-like application but supports HTTP protocol only.\n" + 
@@ -59,26 +84,11 @@ public class Httpc {
 						);
 			}
 			
-			else {
-				System.out.print(
-						"httpc is a curl-like application but supports HTTP protocol only.\n" + 
-						"Usage:\n" + 
-						" httpc command [arguments]\n" + 
-						"The commands are:\n" + 
-						" get executes a HTTP GET request and prints the response.\n" + 
-						" post executes a HTTP POST request and prints the response.\n" + 
-						" help prints this screen.\n" + 
-						"Use \"httpc help [command]\" for more information about a command."
-						);
-	
-			}
-			
 			System.exit(0);
-			
-			
-			
 		}
-		if (!lArg0.equals("get") || !lArg0.equals("post")){
+		
+		// no help
+		if (!lArg0.equals("get") && !lArg0.equals("post")){
 			// print help and exit
 			System.out.print(
 					"ERROR -- invalid command --\n\n" +
@@ -93,19 +103,84 @@ public class Httpc {
 					);
 			System.exit(1);
 		}
-		CommandLine line;
+		
+		/// if we got here its because we have either httpc get or httpc post
+		// now processing the rest of the command line
+		
+		Option lVerboseOption = new Option("v", "verbose");
+		Option lHeadersOption = Option.builder("h").argName("k:v").hasArg().valueSeparator(':').build();
+		Option lDataOption = Option.builder("d").argName("inline-data").hasArg().build();
+		Option lFileOption = Option.builder("f").argName("file").hasArg().build();
+		Options lOptions = new Options();
+		lOptions.addOption(lVerboseOption);
+		lOptions.addOption(lHeadersOption);
+		lOptions.addOption(lDataOption);
+		lOptions.addOption(lFileOption);
+		// create the parser
+	    CommandLineParser lParser = new DefaultParser();
+	    CommandLine lLine = null;
+	    
+	    String lUrl = aArgs[aArgs.length-1]; // url is the last argument 
+	    
+	    InetAddress lAddress = null;
+	    try {
+	    	lAddress = InetAddress.getByName(Request.getHostFromURL(lUrl));	    	
+	    } catch (UnknownHostException aE) {
+	    	System.out.println(aE.getMessage());
+	    	System.exit(1);
+	    }
+	    
+	    Socket lSocket = null;
+	    try {
+			lSocket = new Socket(lAddress, Request.PORT);
+		} catch (IOException aE) {
+			// TODO Auto-generated catch block
+			aE.printStackTrace();
+		}
+	    
+	    OutputStream lOut = null;
+	    try {
+			lOut = lSocket.getOutputStream();
+		} catch (IOException aE) {
+			// TODO Auto-generated catch block
+			aE.printStackTrace();
+		}
+	    
+	    Writer lWriter = new BufferedWriter(new OutputStreamWriter(lOut));
+	    
+	    try {
+	        // parse the command line arguments
+	    	lLine = lParser.parse( lOptions, aArgs );
+	    }
+	    catch( ParseException aE ) {
+	        // oops, something went wrong
+	        System.err.println( "Parsing failed.  Reason: " + aE.getMessage() );
+	        System.exit(1);
+	    }
 		
 		
 		if (lArg0.equals("get")) {
-			// do get
 			//httpc get 'http://httpbin.org/get?course=networking&assignment=1'
-			// look if verbose is present
 			//usage: httpc get [-v] [-h key:value] URL
+			GetRequest lReq = new GetRequest();
+			lReq.setURI(Request.getPathFromUrl(lUrl));
+			String[] lHeadersKeyVal = lLine.getOptionValues('h');
+			if (lHeadersKeyVal != null) {				
+				for (int i = 0; i < lHeadersKeyVal.length; i++) {
+					lReq.setHeader(lHeadersKeyVal[i], lHeadersKeyVal[i+1]);
+				}
+			}
+			lReq.execute(lWriter, false);
 			
+			Response lResponse = new Response(lSocket.getInputStream());
+			if (lLine.hasOption("v")) {
+				// verbose prints the response headers as well
+			}
+		
 			
 		}
 		
-		if (lArg0.equals("post")) {
+		else if (lArg0.equals("post")) {
 			// do post
 		}
 	

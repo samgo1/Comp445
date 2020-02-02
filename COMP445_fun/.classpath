@@ -2,7 +2,7 @@
 <classpath>
 	<classpathentry kind="src" path="src"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
-	<classpathentry kind="lib" path="lib/commons-cli-1.4.jar">
+	<classpathentry kind="lib" path="lib/commons-cli-1.4.jar" sourcepath="/Users/samgo1/Downloads/commons-cli-1.4/commons-cli-1.4-sources.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>
