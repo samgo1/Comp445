@@ -108,7 +108,7 @@ public class Httpc {
 		// now processing the rest of the command line
 		
 		Option lVerboseOption = new Option("v", "verbose");
-		Option lHeadersOption = Option.builder("h").argName("k:v").hasArg().valueSeparator(':').build();
+		Option lHeadersOption = Option.builder("h").argName("k:v").hasArgs().valueSeparator(':').build();
 		Option lDataOption = Option.builder("d").argName("inline-data").hasArg().build();
 		Option lFileOption = Option.builder("f").argName("file").hasArg().build();
 		Options lOptions = new Options();
@@ -118,7 +118,7 @@ public class Httpc {
 		lOptions.addOption(lFileOption);
 		// create the parser
 	    CommandLineParser lParser = new DefaultParser();
-	    CommandLine lLine = null;
+	    CommandLine lCommandLine = null;
 	    
 	    String lUrl = aArgs[aArgs.length-1]; // url is the last argument 
 	    
@@ -150,7 +150,7 @@ public class Httpc {
 	    
 	    try {
 	        // parse the command line arguments
-	    	lLine = lParser.parse( lOptions, aArgs );
+	    	lCommandLine = lParser.parse( lOptions, aArgs );
 	    }
 	    catch( ParseException aE ) {
 	        // oops, something went wrong
@@ -164,27 +164,65 @@ public class Httpc {
 			//usage: httpc get [-v] [-h key:value] URL
 			GetRequest lReq = new GetRequest();
 			lReq.setURI(Request.getPathFromUrl(lUrl));
-			String[] lHeadersKeyVal = lLine.getOptionValues('h');
-			if (lHeadersKeyVal != null) {				
-				for (int i = 0; i < lHeadersKeyVal.length; i++) {
-					lReq.setHeader(lHeadersKeyVal[i], lHeadersKeyVal[i+1]);
-				}
-			}
+			setHeadersOnRequest(lCommandLine, lReq);
 			lReq.execute(lWriter, false);
 			
-			Response lResponse = new Response(lSocket.getInputStream());
-			if (lLine.hasOption("v")) {
-				// verbose prints the response headers as well
+			Response lResponse = null;
+			try {
+				lResponse = new Response(lSocket.getInputStream());
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+				System.exit(1);
 			}
-		
+			lResponse.print(lCommandLine.hasOption('v'));
 			
 		}
 		
 		else if (lArg0.equals("post")) {
 			// do post
+			PostRequest lReq = new PostRequest();
+			lReq.setURI(Request.getPathFromUrl(lUrl));
+			setHeadersOnRequest(lCommandLine, lReq);
+			if (lCommandLine.hasOption('d') && lCommandLine.hasOption('f')) {
+				System.out.println("ERROR -- cannot have both '-d' and '-f' option"+
+									"for a post request");
+				System.exit(1);
+			}
+			// question to self: can we have a post request with empty response body? i think so
+			
+			if (lCommandLine.hasOption('d')) {
+				lReq.setBody(lCommandLine.getOptionValue('d'));
+			}
+			else if (lCommandLine.hasOption('f')) {
+				// todo
+			}
+			lReq.execute(lWriter, false);
+			
+			Response lResponse = null;
+			try {
+				lResponse = new Response(lSocket.getInputStream());
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+				System.exit(1);
+			}
+			lResponse.print(lCommandLine.hasOption('v'));
+			
+			
 		}
 	
 
+	}
+	
+	// helper
+	private static void setHeadersOnRequest(CommandLine aCommandLine, Request aRequest) {
+		String[] lHeadersKeyVal = aCommandLine.getOptionValues('h');
+		if (lHeadersKeyVal != null) {				
+			for (int i = 0; i < lHeadersKeyVal.length; i = i + 2) {
+				aRequest.setHeader(lHeadersKeyVal[i], lHeadersKeyVal[i+1]);
+			}
+		}
 	}
 
 }

@@ -11,6 +11,7 @@ public class PostRequest extends Request {
 	public PostRequest() {
 		mMethod = "POST";
 		mHeaders = new HashMap<String, String>();
+		mBody = "";
 	}
 	
 	@Override
