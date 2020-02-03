@@ -8,6 +8,9 @@ import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 
 import org.apache.commons.cli.*;
 
@@ -20,7 +23,7 @@ public class Httpc {
 			lArg0 = aArgs[0]; // get | post | help
 		} catch(ArrayIndexOutOfBoundsException aE) {
 			System.out.print(
-					"ERROR -- no arguments give -- \n\n"+
+					"ERROR -- no arguments given -- \n\n"+
 					"httpc is a curl-like application but supports HTTP protocol only.\n" + 
 					"Usage:\n" + 
 					" httpc command [arguments]\n" + 
@@ -134,18 +137,22 @@ public class Httpc {
 	    try {
 			lSocket = new Socket(lAddress, Request.PORT);
 		} catch (IOException aE) {
-			// TODO Auto-generated catch block
+			System.out.println(aE.getMessage());
 			aE.printStackTrace();
+			System.exit(1);
+			
 		}
 	    
 	    OutputStream lOut = null;
 	    try {
 			lOut = lSocket.getOutputStream();
 		} catch (IOException aE) {
-			// TODO Auto-generated catch block
+			System.out.println(aE.getMessage());
 			aE.printStackTrace();
+			System.exit(1);
 		}
-	    
+	    // OutputStreamWriter character -> bytes
+	    // BufferedWriter (for efficiency)
 	    Writer lWriter = new BufferedWriter(new OutputStreamWriter(lOut));
 	    
 	    try {
@@ -165,14 +172,14 @@ public class Httpc {
 			GetRequest lReq = new GetRequest();
 			lReq.setURI(Request.getPathFromUrl(lUrl));
 			setHeadersOnRequest(lCommandLine, lReq);
-			lReq.execute(lWriter, false);
+			lReq.execute(lWriter);
 			
 			Response lResponse = null;
 			try {
 				lResponse = new Response(lSocket.getInputStream());
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+			} catch (IOException aE) {
+				System.out.println(aE.getMessage());
+				aE.printStackTrace();
 				System.exit(1);
 			}
 			lResponse.print(lCommandLine.hasOption('v'));
@@ -181,7 +188,14 @@ public class Httpc {
 		
 		else if (lArg0.equals("post")) {
 			// do post
-			PostRequest lReq = new PostRequest();
+			PostRequest lReq = null;
+			try {
+				lReq = new PostRequest(lSocket.getOutputStream());
+			} catch (IOException aE) {
+				System.out.println(aE.getMessage());
+				aE.printStackTrace();
+				System.exit(1);
+			}
 			lReq.setURI(Request.getPathFromUrl(lUrl));
 			setHeadersOnRequest(lCommandLine, lReq);
 			if (lCommandLine.hasOption('d') && lCommandLine.hasOption('f')) {
@@ -192,12 +206,40 @@ public class Httpc {
 			// question to self: can we have a post request with empty response body? i think so
 			
 			if (lCommandLine.hasOption('d')) {
-				lReq.setBody(lCommandLine.getOptionValue('d'));
+				String lValue = lCommandLine.getOptionValue('d');
+				lReq.setHeader("Content-Length", Integer.toString(lValue.getBytes().length));
+				lReq.setBody(lValue.getBytes());
+				lReq.execute(lWriter);
 			}
 			else if (lCommandLine.hasOption('f')) {
-				// todo
+				String lFilePath = lCommandLine.getOptionValue('f');
+				File lFile = new File(lFilePath);
+				if (lFile.exists()) {
+					FileInputStream lReader = null;
+					try {
+						lReader = new FileInputStream(lFile);
+					} catch (FileNotFoundException e) {
+						System.out.println("ERROR -- file not found -- exiting");
+						e.printStackTrace();
+						System.exit(1);
+					}
+					try {
+						byte[] lData = lReader.readAllBytes(); 
+						lReq.setHeader("Content-Length", Integer.toString(lData.length));
+						lReq.setBody(lData);
+						lReq.execute(lWriter);
+
+					} catch (IOException aE) {
+						System.out.println(aE.getMessage());
+						aE.printStackTrace();
+						System.exit(1);
+					}
+				} else {
+					System.out.println("ERROR -- file does not exist -- exiting");
+					System.exit(1);
+				}
+				
 			}
-			lReq.execute(lWriter, false);
 			
 			Response lResponse = null;
 			try {
@@ -207,12 +249,9 @@ public class Httpc {
 				e.printStackTrace();
 				System.exit(1);
 			}
-			lResponse.print(lCommandLine.hasOption('v'));
-			
-			
+			lResponse.print(lCommandLine.hasOption('v'));	
 		}
-	
-
+		
 	}
 	
 	// helper

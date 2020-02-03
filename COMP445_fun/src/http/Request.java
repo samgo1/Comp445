@@ -23,7 +23,7 @@ public abstract class Request {
 		return assembleRequest();
 	}
 	
-	public void execute(Writer lRequestWriter, boolean verbose) {
+	public void execute(Writer lRequestWriter) {
 		try {
 			lRequestWriter.write(assembleRequest());
 			lRequestWriter.flush();

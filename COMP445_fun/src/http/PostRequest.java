@@ -3,18 +3,24 @@ package http;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.io.IOException;
+import java.io.Writer;
+import java.io.OutputStream;
 
 public class PostRequest extends Request {
 
-	private String mBody;
+	private byte[] mBody;
+	private OutputStream mOut;
 	
-	public PostRequest() {
+	public PostRequest(OutputStream aOut) {
 		mMethod = "POST";
 		mHeaders = new HashMap<String, String>();
-		mBody = "";
+		mOut = aOut;
+		
 	}
 	
 	@Override
+	// the top part of the http post request (excluding the body)
 	public String assembleRequest() {
 		String lRequestLine = mMethod + SPACE + mPath + SPACE + VERSION + CRLF;
 		// building my header line(s)
@@ -30,14 +36,33 @@ public class PostRequest extends Request {
 		
 		lHeaderLines += CRLF;
 		
-		String lRequest = lRequestLine + lHeaderLines + mBody;
+		String lRequest = lRequestLine + lHeaderLines;
 								
 		return lRequest;
 			
 	}
-	
-	public void setBody(String aBody) {
+
+	public void execute(Writer aWriter) {
+		try {
+			aWriter.write(assembleRequest());
+			aWriter.flush();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		try {
+			mOut.write(mBody);
+			mOut.flush();
+		} catch (IOException e) {
+			e.printStackTrace();
+
+		}
+		
+	}
+	public void setBody(byte[] aBody) {
 		mBody = aBody;
+		
+		
 	}
 
 }
