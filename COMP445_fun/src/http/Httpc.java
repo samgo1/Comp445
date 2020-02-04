@@ -55,7 +55,7 @@ public class Httpc {
 						" get executes a HTTP GET request and prints the response.\n" + 
 						" post executes a HTTP POST request and prints the response.\n" + 
 						" help prints this screen.\n" + 
-						"Use \"httpc help [command]\" for more information about a command."
+						"Use \"httpc help [command]\" for more information about a command.\n"
 						);
 				System.exit(0);
 			}
@@ -67,7 +67,7 @@ public class Httpc {
 						" -v Prints the detail of the response such as protocol, status,\n" + 
 						"and headers.\n" + 
 						"-h key:value Associates headers to HTTP Request with the format\n" + 
-						"'key:value'."
+						"'key:value'\n."
 						);
 			}
 			
@@ -83,7 +83,7 @@ public class Httpc {
 						"-d string Associates an inline data to the body HTTP POST request.\n" + 
 						"-f file Associates the content of a file to the body HTTP POST\n" + 
 						"request.\n" + 
-						"Either [-d] or [-f] can be used but not both."
+						"Either [-d] or [-f] can be used but not both.\n"
 						);
 			}
 			
@@ -102,7 +102,7 @@ public class Httpc {
 					" get executes a HTTP GET request and prints the response.\n" + 
 					" post executes a HTTP POST request and prints the response.\n" + 
 					" help prints this screen.\n" + 
-					"Use \"httpc help [command]\" for more information about a command."
+					"Use \"httpc help [command]\" for more information about a command.\n"
 					);
 			System.exit(1);
 		}
@@ -124,6 +124,9 @@ public class Httpc {
 	    CommandLine lCommandLine = null;
 	    
 	    String lUrl = aArgs[aArgs.length-1]; // url is the last argument 
+	    if (!lUrl.startsWith("http://")) {
+			lUrl = "http://" + lUrl;
+		}
 	    
 	    InetAddress lAddress = null;
 	    try {
