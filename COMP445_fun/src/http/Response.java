@@ -21,6 +21,7 @@ public class Response {
 		mInputStream = aInputStream;
 		mHeaders = new HashMap<>();
 		mBody = "";
+		// parsing the returned response
 		parse();
 	
 	}

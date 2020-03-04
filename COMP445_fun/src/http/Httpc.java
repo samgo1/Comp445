@@ -112,6 +112,7 @@ public class Httpc {
 		
 		Option lVerboseOption = new Option("v", "verbose");
 		Option lHeadersOption = Option.builder("h").argName("k:v").hasArgs().valueSeparator(':').build();
+		Option lPortOption = Option.builder("port").argName("port number").hasArg().build();
 		Option lDataOption = Option.builder("d").argName("inline-data").hasArg().build();
 		Option lFileOption = Option.builder("f").argName("file").hasArg().build();
 		Options lOptions = new Options();
@@ -119,9 +120,20 @@ public class Httpc {
 		lOptions.addOption(lHeadersOption);
 		lOptions.addOption(lDataOption);
 		lOptions.addOption(lFileOption);
+		lOptions.addOption(lPortOption);
 		// create the parser
 	    CommandLineParser lParser = new DefaultParser();
 	    CommandLine lCommandLine = null;
+	    
+	    try {
+	        // parse the command line arguments
+	    	lCommandLine = lParser.parse( lOptions, aArgs );
+	    }
+	    catch( ParseException aE ) {
+	        // oops, something went wrong
+	        System.err.println( "Parsing failed.  Reason: " + aE.getMessage() );
+	        System.exit(1);
+	    }
 	    
 	    String lUrl = aArgs[aArgs.length-1]; // url is the last argument 
 	    if (!lUrl.startsWith("http://")) {
@@ -138,7 +150,13 @@ public class Httpc {
 	    
 	    Socket lSocket = null;
 	    try {
-			lSocket = new Socket(lAddress, Request.PORT);
+	    	if (lCommandLine.hasOption("port")) {
+	    		lSocket = new Socket(lAddress,
+						Integer.parseInt(lCommandLine.getOptionValue("port")));
+	    	} else {
+	    		lSocket = new Socket(lAddress, Request.PORT);
+	    	}
+			
 		} catch (IOException aE) {
 			System.out.println(aE.getMessage());
 			aE.printStackTrace();
@@ -157,17 +175,6 @@ public class Httpc {
 	    // OutputStreamWriter character -> bytes
 	    // BufferedWriter (for efficiency)
 	    Writer lWriter = new BufferedWriter(new OutputStreamWriter(lOut));
-	    
-	    try {
-	        // parse the command line arguments
-	    	lCommandLine = lParser.parse( lOptions, aArgs );
-	    }
-	    catch( ParseException aE ) {
-	        // oops, something went wrong
-	        System.err.println( "Parsing failed.  Reason: " + aE.getMessage() );
-	        System.exit(1);
-	    }
-		
 		
 		if (lArg0.equals("get")) {
 			//httpc get 'http://httpbin.org/get?course=networking&assignment=1'
