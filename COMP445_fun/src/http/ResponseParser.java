@@ -8,7 +8,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
-public class Response {
+public class ResponseParser {
 	private InputStream mInputStream;
 	private String mVersion;
 	private int mStatusCode;
@@ -17,7 +17,7 @@ public class Response {
 	private HashMap<String, String> mHeaders;
 	private final String END_OF_HEADERS = "";
 	
-	public Response(InputStream aInputStream) {
+	public ResponseParser(InputStream aInputStream) {
 		mInputStream = aInputStream;
 		mHeaders = new HashMap<>();
 		mBody = "";

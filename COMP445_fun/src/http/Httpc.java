@@ -184,9 +184,9 @@ public class Httpc {
 			setHeadersOnRequest(lCommandLine, lReq);
 			lReq.execute(lWriter);
 			
-			Response lResponse = null;
+			ResponseParser lResponse = null;
 			try {
-				lResponse = new Response(lSocket.getInputStream());
+				lResponse = new ResponseParser(lSocket.getInputStream());
 			} catch (IOException aE) {
 				System.out.println(aE.getMessage());
 				aE.printStackTrace();
@@ -251,9 +251,9 @@ public class Httpc {
 				
 			}
 			
-			Response lResponse = null;
+			ResponseParser lResponse = null;
 			try {
-				lResponse = new Response(lSocket.getInputStream());
+				lResponse = new ResponseParser(lSocket.getInputStream());
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
