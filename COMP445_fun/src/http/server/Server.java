@@ -3,6 +3,8 @@ package http.server;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -11,10 +13,7 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.stream.Stream;
+
 
 public class Server {
 	
@@ -22,7 +21,8 @@ public class Server {
 	private String mDirectory;
 	
 	private final String STATUS_LINE_200 = "HTTP/1.0 200 OK \r\n";
-	
+	private final String STATUS_LINE_403 = "HTTP/1.0 403 Forbidden \r\n";
+	private final String STATUS_LINE_404 = "HTTP/1.0 404 Not Found \r\n";
 	public Server(int aPort, String aDirectory) {
 		try {
 			mServerSocket = new ServerSocket(aPort);			
@@ -47,12 +47,12 @@ public class Server {
 				if (lRequestLine.contains("GET")) {
 					if (lResourcePath.contentEquals("/")) {
 						// write all the files in the response to be sent
-						writeGetFilesResponse(lWriter);
+						getFiles(lWriter);
 					} else {
-						writeFileResponse(lWriter, lResourcePath);
+						getFile(lWriter, lResourcePath);
 					}
 				} else if (lRequestLine.contains("POST")) {
-					writewriteFileResponse(lWriter, lResourcePath);
+					writeFile(lWriter, lResourcePath);
 				}
 				
 				lSocket.close();
@@ -63,7 +63,7 @@ public class Server {
 		}
 	}
 	
-	private void writeGetFilesResponse(Writer aWriter) {
+	private void getFiles(Writer aWriter) {
 		String lBody = "";
 		try {
 			aWriter.write(STATUS_LINE_200);
@@ -74,9 +74,7 @@ public class Server {
 			File[] lListOfFiles = lFolder.listFiles();
 
 			for (File lFile : lListOfFiles) {
-			    if (lFile.isFile()) {
-			        lBody += lFile.getName() + "\r\n";
-			    }
+		        lBody += lFile.getName() + "\r\n";
 			}
 			aWriter.write(lBody); // body
 			aWriter.flush();
@@ -86,11 +84,46 @@ public class Server {
 		}
 	}
 	
-	private void writeFileResponse(Writer aWriter, String aFile) {
-		
+	private void getFile(Writer aWriter, String aResourcePath) {
+		// does the client try to access files outside of current working dir?
+		try {			
+			if (aResourcePath.contains("..")) {
+				aWriter.write(STATUS_LINE_403);
+				aWriter.write("\r\n"); // end of headers 
+				aWriter.flush();
+			} else {
+				String lCanonicalName = mDirectory + aResourcePath;
+				File lResource = null;
+				try {
+					lResource = new File(lCanonicalName);	
+					int lFileLength = (int) lResource.length();
+					char[] lBuffer = new char[lFileLength];
+					aWriter.write(STATUS_LINE_200);
+					aWriter.write("\r\n"); // end of headers
+					
+		            FileReader fileReader = new FileReader(lResource);
+
+		            BufferedReader bufferedReader = new BufferedReader(fileReader);
+		           
+		            bufferedReader.read(lBuffer);
+		            	
+		            aWriter.write(lBuffer);
+		            aWriter.flush();
+		            bufferedReader.close();
+				} catch (FileNotFoundException e) {
+					aWriter.write(STATUS_LINE_404);
+					aWriter.write("\r\n"); // end of headers 
+					aWriter.flush();
+				}
+
+			}
+		} catch (IOException e) {
+			System.out.print(e.getMessage());
+        	e.printStackTrace();
+		}
 	}
 	
-	private void writewriteFileResponse(Writer aWriter, String aFile) {
+	private void writeFile(Writer aWriter, String aFile) {
 		
 	}
 	
