@@ -11,8 +11,10 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.io.FileWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.CharBuffer;
 
 
 public class Server {
@@ -52,7 +54,7 @@ public class Server {
 						getFile(lWriter, lResourcePath);
 					}
 				} else if (lRequestLine.contains("POST")) {
-					writeFile(lWriter, lResourcePath);
+					writeFile(lWriter, lResourcePath, lBuffReader);
 				}
 				
 				lSocket.close();
@@ -123,9 +125,49 @@ public class Server {
 		}
 	}
 	
-	private void writeFile(Writer aWriter, String aFile) {
-		
+	private void writeFile(Writer aWriter, String aResourcePath, BufferedReader aBufferedReader) {
+		try {
+			if (aResourcePath.contains("..")) {
+			aWriter.write(STATUS_LINE_403);
+			aWriter.write("\r\n"); // end of headers 
+			aWriter.flush();
+			}
+			else {
+				String lLine;
+				do {
+					lLine = aBufferedReader.readLine();
+				}
+				while (!lLine.startsWith("Content-Length") && lLine != null);
+				if (lLine.startsWith("Content-Length")) {
+					
+					int lContentLength = Integer.parseInt(lLine.substring(15));
+					FileWriter lFileWriter = new FileWriter(mDirectory + aResourcePath);
+					do {
+						lLine = aBufferedReader.readLine();
+					}
+					while (!lLine.contentEquals(""));
+					if (lLine.contentEquals("")) {						
+						char[] lBody = new char[lContentLength];
+						int lRead = aBufferedReader.read(lBody);
+						lFileWriter.write(lBody);
+					}
+					aBufferedReader.close();
+					lFileWriter.close();
+					aWriter.write(STATUS_LINE_200);
+					aWriter.write("\r\n"); // end of headers
+					
+					
+				} else {
+					// can't process request, missing content length header
+				}
+			}
+		} catch(IOException e) {
+			System.out.print(e.getMessage());
+        	e.printStackTrace();
+		}
 	}
+			
+		
 	
 	private String getPathfromRequestLine(String aRequestLine) {
 		int lStartingIndex = aRequestLine.indexOf(' ');
@@ -134,6 +176,6 @@ public class Server {
 		return lPath;
 		
 	}
-	
+
 	
 }
