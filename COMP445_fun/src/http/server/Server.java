@@ -14,7 +14,6 @@ import java.io.Writer;
 import java.io.FileWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.CharBuffer;
 
 
 public class Server {
@@ -25,6 +24,7 @@ public class Server {
 	private final String STATUS_LINE_200 = "HTTP/1.0 200 OK \r\n";
 	private final String STATUS_LINE_403 = "HTTP/1.0 403 Forbidden \r\n";
 	private final String STATUS_LINE_404 = "HTTP/1.0 404 Not Found \r\n";
+	
 	public Server(int aPort, String aDirectory) {
 		try {
 			mServerSocket = new ServerSocket(aPort);			
@@ -33,6 +33,11 @@ public class Server {
 			e.printStackTrace();
 		}
 		mDirectory = aDirectory;
+		// does the specified directory exist
+		File lDir = new File(mDirectory);
+		if (!lDir.exists()) {
+			lDir.mkdir();
+		}
 	}
 	
 	public void run() {
@@ -65,12 +70,10 @@ public class Server {
 		}
 	}
 	
+	// requirement 1 
 	private void getFiles(Writer aWriter) {
 		String lBody = "";
 		try {
-			aWriter.write(STATUS_LINE_200);
-			// add headers here, each line ended with \r\n
-			aWriter.write("\r\n"); // end of headers 
 			/* making the body */
 			File lFolder = new File(mDirectory);
 			File[] lListOfFiles = lFolder.listFiles();
@@ -78,21 +81,29 @@ public class Server {
 			for (File lFile : lListOfFiles) {
 		        lBody += lFile.getName() + "\r\n";
 			}
+			int lContentLength = lBody.getBytes().length;
+			
+			// response writing
+			
+			aWriter.write(STATUS_LINE_200);
+			// add headers here, each line ended with \r\n
+			aWriter.write("Content-Length:"+lContentLength+"\r\n");
+			aWriter.write("Content-Type:text/plain\r\n");
+			aWriter.write("\r\n"); // end of headers 
 			aWriter.write(lBody); // body
 			aWriter.flush();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
+			System.out.print(e.getMessage());
 			e.printStackTrace();
 		}
 	}
 	
+	// requirement 2
 	private void getFile(Writer aWriter, String aResourcePath) {
 		// does the client try to access files outside of current working dir?
 		try {			
 			if (aResourcePath.contains("..")) {
-				aWriter.write(STATUS_LINE_403);
-				aWriter.write("\r\n"); // end of headers 
-				aWriter.flush();
+				forbiddenRequest(aWriter);
 			} else {
 				String lCanonicalName = mDirectory + aResourcePath;
 				File lResource = null;
@@ -100,11 +111,11 @@ public class Server {
 					lResource = new File(lCanonicalName);	
 					int lFileLength = (int) lResource.length();
 					char[] lBuffer = new char[lFileLength];
+					FileReader fileReader = new FileReader(lResource);
 					aWriter.write(STATUS_LINE_200);
+					aWriter.write("Content-Length:"+lFileLength+"\r\n");
+					aWriter.write("Content-Type:text/plain\r\n");
 					aWriter.write("\r\n"); // end of headers
-					
-		            FileReader fileReader = new FileReader(lResource);
-
 		            BufferedReader bufferedReader = new BufferedReader(fileReader);
 		           
 		            bufferedReader.read(lBuffer);
@@ -125,12 +136,11 @@ public class Server {
 		}
 	}
 	
+	// requirement 3
 	private void writeFile(Writer aWriter, String aResourcePath, BufferedReader aBufferedReader) {
 		try {
 			if (aResourcePath.contains("..")) {
-			aWriter.write(STATUS_LINE_403);
-			aWriter.write("\r\n"); // end of headers 
-			aWriter.flush();
+				forbiddenRequest(aWriter);
 			}
 			else {
 				String lLine;
@@ -141,24 +151,30 @@ public class Server {
 				if (lLine.startsWith("Content-Length")) {
 					
 					int lContentLength = Integer.parseInt(lLine.substring(15));
-					FileWriter lFileWriter = new FileWriter(mDirectory + aResourcePath);
 					do {
 						lLine = aBufferedReader.readLine();
 					}
 					while (!lLine.contentEquals(""));
+					FileWriter lFileWriter = new FileWriter(mDirectory + aResourcePath);
 					if (lLine.contentEquals("")) {						
 						char[] lBody = new char[lContentLength];
 						int lRead = aBufferedReader.read(lBody);
 						lFileWriter.write(lBody);
 					}
-					aBufferedReader.close();
-					lFileWriter.close();
 					aWriter.write(STATUS_LINE_200);
+					String lMessageBody = "file successfully written!";
+					lContentLength = lMessageBody.getBytes().length; // reusing the var for another assign
+					aWriter.write("Content-Length:"+lContentLength+"\r\n");
+					aWriter.write("Content-Type:text/plain\r\n");
 					aWriter.write("\r\n"); // end of headers
+					aWriter.write(lMessageBody);
+					aWriter.flush();
+					lFileWriter.close();
 					
 					
 				} else {
 					// can't process request, missing content length header
+					// -- > I automatically add Content-Length header on my client app
 				}
 			}
 		} catch(IOException e) {
@@ -168,13 +184,24 @@ public class Server {
 	}
 			
 		
-	
+	// helpers section
 	private String getPathfromRequestLine(String aRequestLine) {
 		int lStartingIndex = aRequestLine.indexOf(' ');
 		int lEndIndex = aRequestLine.indexOf(' ', lStartingIndex + 1);
 		String lPath = aRequestLine.substring(lStartingIndex+1, lEndIndex);
 		return lPath;
 		
+	}
+	
+	private void forbiddenRequest(Writer aWriter) throws IOException {
+		aWriter.write(STATUS_LINE_403);
+		String lMessageBody = "You are not allowed to have '..' in the request URI";
+		int lContentLength = lMessageBody.getBytes().length;
+		aWriter.write("Content-Length:"+lContentLength+"\r\n");
+		aWriter.write("Content-Type:text/plain\r\n");
+		aWriter.write("\r\n"); // end of headers
+		aWriter.write(lMessageBody);
+		aWriter.flush();
 	}
 
 	

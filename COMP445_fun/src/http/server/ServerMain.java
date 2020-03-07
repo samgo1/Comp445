@@ -36,7 +36,7 @@ public class ServerMain {
 	    }
 	    
 	    int lServerPort = lCommandLine.hasOption('p')? Integer.parseInt(lCommandLine.getOptionValue('p')): DEFAULT_PORT;
-	    String lServerDir = lCommandLine.hasOption('d')? lCommandLine.getOptionValue('d'): DEFAULT_DIR;
+	    String lServerDir = lCommandLine.hasOption('d')? DEFAULT_DIR+ "/" + lCommandLine.getOptionValue('d'): DEFAULT_DIR;
 	    Server server = new Server(lServerPort, lServerDir);
 		
 	    server.run();	
