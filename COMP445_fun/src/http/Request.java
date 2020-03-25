@@ -53,6 +53,10 @@ public abstract class Request {
 		mHost = aHost;
 	}
 	
+	public String getMethod() {
+		return mMethod;
+	}
+	
 	public static String getPathFromUrl(String aURL) {
 
 		URI lUri = null;

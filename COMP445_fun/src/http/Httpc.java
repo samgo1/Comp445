@@ -5,8 +5,11 @@ import java.io.Writer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.io.File;
 import java.io.FileInputStream;
@@ -15,8 +18,11 @@ import java.io.FileNotFoundException;
 import org.apache.commons.cli.*;
 
 public class Httpc {
+	
+	private static final int ROUTER_PORT = 3000;
 
 	public static void main(String[] aArgs) {
+		boolean lUDPSwitch = false;
 		// getting the first argument
 		String lArg0 = "";
 		try {
@@ -111,6 +117,7 @@ public class Httpc {
 		// now processing the rest of the command line
 		
 		Option lVerboseOption = new Option("v", "verbose");
+		Option lUDPOption = new Option("UDP", "udp transport"); // ignores other args
 		Option lHeadersOption = Option.builder("h").argName("k:v").hasArgs().valueSeparator(':').build();
 		Option lPortOption = Option.builder("port").argName("port number").hasArg().build();
 		Option lDataOption = Option.builder("d").argName("inline-data").hasArg().build();
@@ -121,6 +128,7 @@ public class Httpc {
 		lOptions.addOption(lDataOption);
 		lOptions.addOption(lFileOption);
 		lOptions.addOption(lPortOption);
+		lOptions.addOption(lUDPOption);
 		// create the parser
 	    CommandLineParser lParser = new DefaultParser();
 	    CommandLine lCommandLine = null;
@@ -133,6 +141,11 @@ public class Httpc {
 	        // oops, something went wrong
 	        System.err.println( "Parsing failed.  Reason: " + aE.getMessage() );
 	        System.exit(1);
+	    }
+	    
+	    // as soon as we parsed let's find out if we are in the 'UDP' mode
+	    if (lCommandLine.hasOption("UDP")) {
+	    	lUDPSwitch = true;
 	    }
 	    
 	    String lUrl = aArgs[aArgs.length-1]; // url is the last argument 
@@ -149,119 +162,151 @@ public class Httpc {
 	    }
 	    
 	    Socket lSocket = null;
-	    try {
-	    	if (lCommandLine.hasOption("port")) {
-	    		lSocket = new Socket(lAddress,
-						Integer.parseInt(lCommandLine.getOptionValue("port")));
-	    	} else {
-	    		lSocket = new Socket(lAddress, Request.PORT);
+	    if (lUDPSwitch == false) {
+	    	// normal mode (TCP)
+	    	try {
+		    	
+				if (lCommandLine.hasOption("port")) {
+					lSocket = new Socket(lAddress,
+					Integer.parseInt(lCommandLine.getOptionValue("port")));
+	    		} else {
+	    			lSocket = new Socket(lAddress, Request.PORT);
+	    		}
 	    	}
-			
-		} catch (IOException aE) {
-			System.out.println(aE.getMessage());
-			aE.printStackTrace();
-			System.exit(1);
-			
-		}
-	    
-	    OutputStream lOut = null;
-	    try {
-			lOut = lSocket.getOutputStream();
-		} catch (IOException aE) {
-			System.out.println(aE.getMessage());
-			aE.printStackTrace();
-			System.exit(1);
-		}
-	    // OutputStreamWriter character -> bytes
-	    // BufferedWriter (for efficiency)
-	    Writer lWriter = new BufferedWriter(new OutputStreamWriter(lOut));
-		
-		if (lArg0.equals("get")) {
-			//httpc get 'http://httpbin.org/get?course=networking&assignment=1'
-			//usage: httpc get [-v] [-h key:value] URL
-			GetRequest lReq = new GetRequest();
-			lReq.setURI(Request.getPathFromUrl(lUrl));
-			setHeadersOnRequest(lCommandLine, lReq);
-			lReq.execute(lWriter);
-			
-			ResponseParser lResponse = null;
-			try {
-				lResponse = new ResponseParser(lSocket.getInputStream());
+		    		
+			 catch (IOException aE) {
+				System.out.println(aE.getMessage());
+				aE.printStackTrace();
+				System.exit(1);
+				
+			}
+		    
+		    OutputStream lOut = null;
+		    try {
+				lOut = lSocket.getOutputStream();
 			} catch (IOException aE) {
 				System.out.println(aE.getMessage());
 				aE.printStackTrace();
 				System.exit(1);
 			}
-			lResponse.print(lCommandLine.hasOption('v'));
+		    // OutputStreamWriter character -> bytes
+		    // BufferedWriter (for efficiency)
+		    Writer lWriter = new BufferedWriter(new OutputStreamWriter(lOut));
 			
-		}
-		
-		else if (lArg0.equals("post")) {
-			// do post
-			PostRequest lReq = null;
-			try {
-				lReq = new PostRequest(lSocket.getOutputStream());
-			} catch (IOException aE) {
-				System.out.println(aE.getMessage());
-				aE.printStackTrace();
-				System.exit(1);
-			}
-			lReq.setURI(Request.getPathFromUrl(lUrl));
-			setHeadersOnRequest(lCommandLine, lReq);
-			if (lCommandLine.hasOption('d') && lCommandLine.hasOption('f')) {
-				System.out.println("ERROR -- cannot have both '-d' and '-f' option"+
-									"for a post request");
-				System.exit(1);
-			}
-			// question to self: can we have a post request with empty response body? i think so
-			
-			if (lCommandLine.hasOption('d')) {
-				String lValue = lCommandLine.getOptionValue('d');
-				lReq.setHeader("Content-Length", Integer.toString(lValue.getBytes().length));
-				lReq.setBody(lValue.getBytes());
+			if (lArg0.equals("get")) {
+				//httpc get 'http://httpbin.org/get?course=networking&assignment=1'
+				//usage: httpc get [-v] [-h key:value] URL
+				GetRequest lReq = new GetRequest();
+				lReq.setURI(Request.getPathFromUrl(lUrl));
+				setHeadersOnRequest(lCommandLine, lReq);
 				lReq.execute(lWriter);
-			}
-			else if (lCommandLine.hasOption('f')) {
-				String lFilePath = lCommandLine.getOptionValue('f');
-				File lFile = new File(lFilePath);
-				if (lFile.exists()) {
-					FileInputStream lReader = null;
-					try {
-						lReader = new FileInputStream(lFile);
-					} catch (FileNotFoundException e) {
-						System.out.println("ERROR -- file not found -- exiting");
-						e.printStackTrace();
-						System.exit(1);
-					}
-					try {
-						byte[] lData = lReader.readAllBytes(); 
-						lReq.setHeader("Content-Length", Integer.toString(lData.length));
-						lReq.setBody(lData);
-						lReq.execute(lWriter);
-
-					} catch (IOException aE) {
-						System.out.println(aE.getMessage());
-						aE.printStackTrace();
-						System.exit(1);
-					}
-				} else {
-					System.out.println("ERROR -- file does not exist -- exiting");
+				
+				ResponseParser lResponse = null;
+				try {
+					lResponse = new ResponseParser(lSocket.getInputStream());
+				} catch (IOException aE) {
+					System.out.println(aE.getMessage());
+					aE.printStackTrace();
 					System.exit(1);
 				}
+				lResponse.print(lCommandLine.hasOption('v'));
 				
 			}
 			
-			ResponseParser lResponse = null;
-			try {
-				lResponse = new ResponseParser(lSocket.getInputStream());
-			} catch (IOException e) {
+			else if (lArg0.equals("post")) {
+				// do post
+				PostRequest lReq = null;
+				try {
+					lReq = new PostRequest(lSocket.getOutputStream());
+				} catch (IOException aE) {
+					System.out.println(aE.getMessage());
+					aE.printStackTrace();
+					System.exit(1);
+				}
+				lReq.setURI(Request.getPathFromUrl(lUrl));
+				setHeadersOnRequest(lCommandLine, lReq);
+				if (lCommandLine.hasOption('d') && lCommandLine.hasOption('f')) {
+					System.out.println("ERROR -- cannot have both '-d' and '-f' option"+
+										"for a post request");
+					System.exit(1);
+				}
+				// question to self: can we have a post request with empty response body? i think so
+				
+				if (lCommandLine.hasOption('d')) {
+					String lValue = lCommandLine.getOptionValue('d');
+					lReq.setHeader("Content-Length", Integer.toString(lValue.getBytes().length));
+					lReq.setBody(lValue.getBytes());
+					lReq.execute(lWriter);
+				}
+				else if (lCommandLine.hasOption('f')) {
+					String lFilePath = lCommandLine.getOptionValue('f');
+					File lFile = new File(lFilePath);
+					if (lFile.exists()) {
+						FileInputStream lReader = null;
+						try {
+							lReader = new FileInputStream(lFile);
+						} catch (FileNotFoundException e) {
+							System.out.println("ERROR -- file not found -- exiting");
+							e.printStackTrace();
+							System.exit(1);
+						}
+						try {
+							byte[] lData = lReader.readAllBytes(); 
+							lReq.setHeader("Content-Length", Integer.toString(lData.length));
+							lReq.setBody(lData);
+							lReq.execute(lWriter);
+
+						} catch (IOException aE) {
+							System.out.println(aE.getMessage());
+							aE.printStackTrace();
+							System.exit(1);
+						}
+					} else {
+						System.out.println("ERROR -- file does not exist -- exiting");
+						System.exit(1);
+					}
+					
+				}
+				
+				ResponseParser lResponse = null;
+				try {
+					lResponse = new ResponseParser(lSocket.getInputStream());
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+					System.exit(1);
+				}
+				lResponse.print(lCommandLine.hasOption('v'));	
+			}
+	    } else {
+	    	// udp mode client side
+	    	int lRouterPort = 3000; // local
+	    	DatagramSocket lDatagramSocket = null;
+	    	try {
+	    		lDatagramSocket = new DatagramSocket(lRouterPort);
+			} catch (SocketException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 				System.exit(1);
 			}
-			lResponse.print(lCommandLine.hasOption('v'));	
-		}
-		
+	    	// get or post
+	    	int lPacketBufferSize = 1024; // 1024 bytes
+	    	// first the send http request
+	    	if (lArg0.equals("get")) {
+	    		GetRequest lReq = new GetRequest();
+				lReq.setURI(Request.getPathFromUrl(lUrl));
+				setHeadersOnRequest(lCommandLine, lReq);
+				executeGetUDP(lReq, lDatagramSocket);
+			
+	    	}
+	    	else if (lArg0.equals("post")) {
+	    		
+	    	}
+	    	
+	    	//DatagramPacket lDP = new DatagramPacket();
+	    	
+	    }
+	   
 	}
 	
 	// helper
@@ -272,6 +317,21 @@ public class Httpc {
 				aRequest.setHeader(lHeadersKeyVal[i], lHeadersKeyVal[i+1]);
 			}
 		}
+	}
+	
+	private static void executeGetUDP(GetRequest aRequest, DatagramSocket aDatagramSocket) {
+		// make a SYNC packet
+		// to start the communication
+		InetAddress lLocalhost = InetAddress.getLocalHost();
+		Packet.Builder lPacketBuilder = new Packet.Builder();
+		lPacketBuilder.setType(Packet.PACKET_TYPE_SYN);
+		lPacketBuilder.setPeerAddress(lLocalhost);
+		lPacketBuilder.setSequenceNumber(0);
+		lPacketBuilder.setPortNumber(ROUTER_PORT);
+		DatagramPacket lDP = new DatagramPacket();
+		
+		
+		
 	}
 
 }
