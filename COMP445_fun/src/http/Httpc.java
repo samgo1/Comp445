@@ -280,17 +280,16 @@ public class Httpc {
 			}
 	    } else {
 	    	// udp mode client side
-	    	int lRouterPort = 3000; // local
+	    	int lMyPort = 3000; // local
 	    	DatagramSocket lDatagramSocket = null;
 	    	try {
-	    		lDatagramSocket = new DatagramSocket(lRouterPort);
+	    		lDatagramSocket = new DatagramSocket(lMyPort);
 			} catch (SocketException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 				System.exit(1);
 			}
 	    	// get or post
-	    	int lPacketBufferSize = 1024; // 1024 bytes
 	    	// first the send http request
 	    	if (lArg0.equals("get")) {
 	    		GetRequest lReq = new GetRequest();
@@ -320,16 +319,33 @@ public class Httpc {
 	}
 	
 	private static void executeGetUDP(GetRequest aRequest, DatagramSocket aDatagramSocket) {
-		// make a SYNC packet
+		// make a SYNC packet with 0 payload
 		// to start the communication
-		InetAddress lLocalhost = InetAddress.getLocalHost();
+		InetAddress lLocalhost = null;
+		try {
+			lLocalhost = InetAddress.getLocalHost();
+		} catch (UnknownHostException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		Packet.Builder lPacketBuilder = new Packet.Builder();
 		lPacketBuilder.setType(Packet.PACKET_TYPE_SYN);
-		lPacketBuilder.setPeerAddress(lLocalhost);
 		lPacketBuilder.setSequenceNumber(0);
-		lPacketBuilder.setPortNumber(ROUTER_PORT);
-		DatagramPacket lDP = new DatagramPacket();
-		
+		lPacketBuilder.setPeerAddress(lLocalhost);
+		lPacketBuilder.setPortNumber(aDatagramSocket.getPort());
+		// we gotta make sure the payload doesn't overflow packet size
+//		byte[] lPayload = aRequest.assembleRequest().getBytes();
+//		int lPayloadLength = lPayload.length;
+//		if (lPayloadLength > Packet.MAX_LEN) {
+//			// chunk it
+//			
+//		}
+		byte[] lEmpty = null;
+		lPacketBuilder.setPayload(lEmpty);
+		Packet lPacket = lPacketBuilder.create();
+		byte[] lPacketBytes = lPacket.toBytes();
+		DatagramPacket lDatagramPacket = new DatagramPacket(lPacketBytes, lPacketBytes.length,
+				lPacket.getPeerAddress(), lPacket.getPeerPort());
 		
 		
 	}
