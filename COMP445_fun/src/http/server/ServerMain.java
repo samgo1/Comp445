@@ -16,10 +16,12 @@ public class ServerMain {
 		Option lVerboseOption = new Option("v", "verbose");
 		Option lPortOption = Option.builder("p").argName("port number").hasArg().build();
 		Option lDirectoryOption = Option.builder("d").argName("server directory").hasArg().build();
+		Option lUDPOption = new Option("udp", "udp mode");
 		Options lOptions = new Options();
 		lOptions.addOption(lVerboseOption);
 		lOptions.addOption(lPortOption);
 		lOptions.addOption(lDirectoryOption);
+		lOptions.addOption(lUDPOption);
 		
 		// create the parser
 	    CommandLineParser lParser = new DefaultParser();
@@ -37,9 +39,13 @@ public class ServerMain {
 	    
 	    int lServerPort = lCommandLine.hasOption('p')? Integer.parseInt(lCommandLine.getOptionValue('p')): DEFAULT_PORT;
 	    String lServerDir = lCommandLine.hasOption('d')? DEFAULT_DIR+ "/" + lCommandLine.getOptionValue('d'): DEFAULT_DIR;
-	    Server server = new Server(lServerPort, lServerDir);
-		
-	    server.run();	
+	    if (lCommandLine.hasOption("udp")) {
+	    	Server server = new Server(lServerPort, lServerDir, true);
+	    	server.runUDP();
+	    } else {
+	    	Server server = new Server(lServerPort, lServerDir, false);
+	    	server.run();		    	
+	    }
 	}
 
 }

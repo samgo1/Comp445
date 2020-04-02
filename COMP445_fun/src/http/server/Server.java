@@ -2,6 +2,7 @@ package http.server;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.nio.ByteBuffer;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -12,26 +13,65 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.io.FileWriter;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
+import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Iterator;
+
+import http.GetRequest;
+import http.Packet;
+import http.Packet.Builder;
 
 
 public class Server {
 	
 	private ServerSocket mServerSocket;
+	private DatagramSocket mServerDatagramSocket;
 	private String mDirectory;
+	private int mCurrentSequenceNumber = 0;
+	private int mClientPort = 3000;
+	private InetAddress mRecvAddress;
+	private boolean mConnectionEstablished = false; // 3 way TCP-Handshake var
+	private ArrayList<Packet> mInFlightPackets;
 	
+	private final int SOCKET_TIMEOUT_MS = 200; 
+	private final int PACKET_MAX_WAIT_TIME = 200;
 	private final String STATUS_LINE_200 = "HTTP/1.0 200 OK \r\n";
 	private final String STATUS_LINE_403 = "HTTP/1.0 403 Forbidden \r\n";
 	private final String STATUS_LINE_404 = "HTTP/1.0 404 Not Found \r\n";
 	
-	public Server(int aPort, String aDirectory) {
-		try {
-			mServerSocket = new ServerSocket(aPort);			
-		} catch(IOException e) {
-			System.out.print(e.getMessage());
-			e.printStackTrace();
+	// local port the server is listening on
+	public Server(int aPort, String aDirectory, boolean aUDPMode) {
+		if (!aUDPMode) {
+			try {
+				mServerSocket = new ServerSocket(aPort);			
+			} catch(IOException e) {
+				System.out.print(e.getMessage());
+				e.printStackTrace();
+			}
+		} else {
+			try {
+				mServerDatagramSocket = new DatagramSocket(aPort);
+			} catch (SocketException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			try {
+				mRecvAddress = InetAddress.getLocalHost();
+			} catch (UnknownHostException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			
+			mInFlightPackets = new ArrayList<Packet>();
 		}
+		
 		mDirectory = aDirectory;
 		// does the specified directory exist
 		File lDir = new File(mDirectory);
@@ -70,6 +110,123 @@ public class Server {
 		}
 	}
 	
+	public void runUDP() {
+		byte[] lPacket = new byte[Packet.MAX_LEN];
+		DatagramPacket lDatagramPacket = new DatagramPacket(lPacket, Packet.MAX_LEN);
+		try {
+			mServerDatagramSocket.setSoTimeout(SOCKET_TIMEOUT_MS); 
+		} catch (SocketException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}
+		while (true) {
+			try {
+				mServerDatagramSocket.receive(lDatagramPacket);
+				int lReceivedPacketType = actUponPacketReceived(lPacket);
+				if (lReceivedPacketType == Packet.PACKET_TYPE_FIN_ACK) {
+					break;
+				}
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				System.out.println("socket timeout");
+				resendTimeoutPackets();
+		
+			}
+		
+		}
+		
+	}
+	
+	private void resendTimeoutPackets() {
+		ArrayList<Packet> lPacketsToReAdd = new ArrayList<Packet>();
+		Iterator<Packet> lIt = mInFlightPackets.iterator();
+		while (lIt.hasNext()) {
+			Packet lPacket = lIt.next();
+			long lPacketStartTime = lPacket.getStartTime();
+			if (lPacketStartTime + PACKET_MAX_WAIT_TIME < System.currentTimeMillis()) {
+				// packet timeout
+				// remove this packet from the list
+				lIt.remove();
+				// send it back and restart its timer
+				sendPacket(lPacket);
+				lPacketsToReAdd.add(lPacket);
+			}
+		}
+		mInFlightPackets.addAll(lPacketsToReAdd);
+	}
+
+	private int actUponPacketReceived(byte[] aPacket) {
+		
+		ByteBuffer lBuffer = ByteBuffer.wrap(aPacket);
+		int lPacketType = aPacket[0];
+		int lReceivedSequenceNumber = lBuffer.getInt(1);
+
+		if (lPacketType == Packet.PACKET_TYPE_SYN) {
+			// send SYN ACK
+			Packet.Builder lPacketBuilder = new Packet.Builder();
+			lPacketBuilder.setType(Packet.PACKET_TYPE_SYN_ACK);
+			mCurrentSequenceNumber = lReceivedSequenceNumber + 1;
+			lPacketBuilder.setSequenceNumber(mCurrentSequenceNumber);
+			lPacketBuilder.setPeerAddress(mRecvAddress);
+			lPacketBuilder.setPortNumber(mClientPort);
+			lPacketBuilder.setPayload(new byte[0]);
+			Packet lPacket = lPacketBuilder.create();
+			byte[] lPacketContent = lPacket.toBytes();
+			DatagramPacket lDatagramPacket = new DatagramPacket(lPacketContent, lPacketContent.length,
+					lPacket.getPeerAddress(), lPacket.getPeerPort());
+			try {
+				mServerDatagramSocket.send(lDatagramPacket);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			lPacket.setStartTime(System.currentTimeMillis());
+			mInFlightPackets.add(lPacket);
+
+		}
+		else if (lPacketType == Packet.PACKET_TYPE_ACK) {
+			if (!mConnectionEstablished) {
+				// for the first ack
+				mConnectionEstablished = true;
+				return lPacketType;
+			}
+			
+			ackSentPacket(lReceivedSequenceNumber);
+			
+			
+			
+		}
+		else if (lPacketType == Packet.PACKET_TYPE_DATA) {
+			// process what the user is requesting
+			byte[] lRcvPacketPayload = new byte[Packet.MAX_PAYLOAD_SIZE]; // 1013
+			lBuffer.get(lRcvPacketPayload, 11, lRcvPacketPayload.length);
+			String lPayloadInString = new String(lRcvPacketPayload, StandardCharsets.UTF_8);
+			String lRequestLine = lPayloadInString.substring(0, lPayloadInString.indexOf("\r\n"));
+			if (lRequestLine.startsWith("GET")) {
+				String lURI = GetRequest.getURIfromStringRequestLine(lRequestLine);
+				if (lURI.contentEquals("/")) {
+					listFilesUDP();
+				}
+			}
+			
+			
+		}
+		
+		return lPacketType;
+	}
+	
+	private void ackSentPacket(int lReceivedSequenceNumber) {
+		Iterator<Packet> lIt = mInFlightPackets.iterator();
+		while (lIt.hasNext()) {
+			Packet lPacket = lIt.next();
+			if (lPacket.getSequenceNumber() == lReceivedSequenceNumber) {
+				lIt.remove();
+			}
+		}
+		
+	}
+
+
 	// requirement 1 
 	private void getFiles(Writer aWriter) {
 		String lBody = "";
@@ -182,8 +339,79 @@ public class Server {
         	e.printStackTrace();
 		}
 	}
+	
+	private void listFilesUDP() {
+		
+		// mon packet payload max size 1013
+		// i need to reserve some bytes for the http headers
+		int lReservedHeaderSpace = 72; // empirically determined
+		String lBody = "";
+		/* making the body */
+		File lFolder = new File(mDirectory);
+		File[] lListOfFiles = lFolder.listFiles();
+
+		for (File lFile : lListOfFiles) {
+	        lBody += lFile.getName() + "\r\n";
+		}
+		byte[] lBodyBytes = lBody.getBytes();
+		int lBodyLength = lBodyBytes.length; 
+		ByteBuffer lBodyBuffer = ByteBuffer.wrap(lBodyBytes);
+		long lBodyRead = 0;
+		
+		while (lBodyRead < lBodyLength) {
+			int lToReadFromBuffer = lBodyBuffer.remaining() % (Packet.MAX_PAYLOAD_SIZE - lReservedHeaderSpace);
+			Packet lPacket = makePacket(lBodyBuffer, lToReadFromBuffer);
+			lBodyRead += lToReadFromBuffer;
+			sendPacket(lPacket);
+			addInFlightList(lPacket);
+			
+		}
+		
+
+	}
 			
 		
+	private void addInFlightList(Packet aPacket) {
+		mInFlightPackets.add(aPacket);
+		
+	}
+
+	private Packet makePacket(ByteBuffer aSrc, int aToReadFromBuffer) {
+		Packet.Builder lPacketBuilder = new Packet.Builder();
+		lPacketBuilder.setType(Packet.PACKET_TYPE_DATA);
+		mCurrentSequenceNumber = mCurrentSequenceNumber + 1;
+		lPacketBuilder.setSequenceNumber(mCurrentSequenceNumber);
+		lPacketBuilder.setPeerAddress(mRecvAddress);
+		lPacketBuilder.setPortNumber(mClientPort);
+		ByteBuffer lPayloadBuffer = ByteBuffer.allocate(Packet.MAX_PAYLOAD_SIZE);
+		StringBuilder lHttpHeaders = new StringBuilder();
+		lHttpHeaders.append(STATUS_LINE_200)
+		.append("Content-Length:"+aToReadFromBuffer+"\r\n")
+		.append("Content-Type:text/plain\r\n")
+		.append("\r\n");
+		lPayloadBuffer.put(lHttpHeaders.toString().getBytes());
+		byte[] lPayload = new byte[aToReadFromBuffer];
+		aSrc.get(lPayload);
+		lPayloadBuffer.put(lPayload);
+		lPacketBuilder.setPayload(lPayloadBuffer.array());
+		return lPacketBuilder.create();
+		
+		
+	}
+	
+	private void sendPacket(Packet aPacket) {
+		DatagramPacket lDP = new DatagramPacket(aPacket.getPayload(), aPacket.getPayload().length
+				, mRecvAddress, mClientPort);
+		try {
+			mServerDatagramSocket.send(lDP);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		// set start time of packet
+		aPacket.setStartTime(System.currentTimeMillis());
+		
+	}
 	// helpers section
 	private String getPathfromRequestLine(String aRequestLine) {
 		int lStartingIndex = aRequestLine.indexOf(' ');

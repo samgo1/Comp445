@@ -30,6 +30,12 @@ public class GetRequest extends Request {
 		String lRequest = lRequestLine + lHeaderLines;
 		return lRequest;
 			
-	}	
+	}
+	
+	public static String getURIfromStringRequestLine(String aRequestLine) {
+		String lGETtrimmed = aRequestLine.substring(4); // trimming the GET
+		String lRequestURI = lGETtrimmed.substring(0, lGETtrimmed.charAt(' '));
+		return lRequestURI;
+	}
 
 }

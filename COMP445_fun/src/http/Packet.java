@@ -14,13 +14,20 @@ public class Packet {
 
     public static final int MIN_LEN = 11;
     public static final int MAX_LEN = 1024;
+    public static final int MAX_PAYLOAD_SIZE = MAX_LEN - MIN_LEN;
     public static final int PACKET_TYPE_SYN = 1;
+    public static final int PACKET_TYPE_SYN_ACK = 2;
+    public static final int PACKET_TYPE_ACK = 3;
+    public static final int PACKET_TYPE_FIN = 4;
+    public static final int PACKET_TYPE_FIN_ACK = 5;
+    public static final int PACKET_TYPE_DATA = 6;
 
     private final int type;
     private final long sequenceNumber;
     private final InetAddress peerAddress;
     private final int peerPort;
     private final byte[] payload;
+    private long mStartTime;
 
 
     public Packet(int type, long sequenceNumber, InetAddress peerAddress, int peerPort, byte[] payload) {
@@ -49,6 +56,14 @@ public class Packet {
 
     public byte[] getPayload() {
         return payload;
+    }
+    
+    public void setStartTime(long aTime) {
+    	mStartTime = aTime;
+    }
+    
+    public long getStartTime() {
+    	return mStartTime;
     }
 
     /**
@@ -129,6 +144,11 @@ public class Packet {
         buf.put(bytes);
         buf.flip();
         return fromBuffer(buf);
+    }
+    // just to help me for the indexOf for the arraylist
+    public boolean equals(Object aObject) {
+    	Packet lPacket = (Packet) aObject;
+    	return this.sequenceNumber == lPacket.sequenceNumber;
     }
 
     @Override
