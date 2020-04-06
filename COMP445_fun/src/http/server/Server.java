@@ -35,13 +35,15 @@ public class Server {
 	private DatagramSocket mServerDatagramSocket;
 	private String mDirectory;
 	private int mCurrentSequenceNumber = 0;
-	private int mClientPort = 3000;
+	private final int CLIENT_PORT = 3000;
 	private InetAddress mRecvAddress;
-	private boolean mConnectionEstablished = false; // 3 way TCP-Handshake var
+	private boolean mFirstDataPacket = true; 
+	private int mLastSequenceNumber = 0;
+	private long mFinSentTime;
+	private boolean mClosing = false;
 	private ArrayList<Packet> mInFlightPackets;
 	
-	private final int SOCKET_TIMEOUT_MS = 200; 
-	private final int PACKET_MAX_WAIT_TIME = 200;
+	private final int SOCKET_TIMEOUT_MS = 1000; 
 	private final String STATUS_LINE_200 = "HTTP/1.0 200 OK \r\n";
 	private final String STATUS_LINE_403 = "HTTP/1.0 403 Forbidden \r\n";
 	private final String STATUS_LINE_404 = "HTTP/1.0 404 Not Found \r\n";
@@ -119,61 +121,66 @@ public class Server {
 			// TODO Auto-generated catch block
 			e1.printStackTrace();
 		}
-		while (true) {
+		while (!mClosing) {
 			try {
 				mServerDatagramSocket.receive(lDatagramPacket);
-				int lReceivedPacketType = actUponPacketReceived(lPacket);
+				int lReceivedPacketType = actUponPacketReceived(lDatagramPacket.getData());
 				if (lReceivedPacketType == Packet.PACKET_TYPE_FIN_ACK) {
-					break;
+					mClosing = true;
 				}
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
-				System.out.println("socket timeout");
+				System.out.println("Server timeout on socket receive");
 				resendTimeoutPackets();
 		
 			}
 		
 		}
 		
+		System.out.println("closed at " + System.currentTimeMillis());
+		
 	}
 	
 	private void resendTimeoutPackets() {
-		ArrayList<Packet> lPacketsToReAdd = new ArrayList<Packet>();
+		if (mFinSentTime > 0 && System.currentTimeMillis() > mFinSentTime + 5000) {
+			// its been 5 seconds since we sent a fin and still no response,
+			// client has shut down
+			System.out.println("Did not get FIN-ACK within 5 seconds of sent Fin\nclosing...");
+			mClosing = true;
+		}
 		Iterator<Packet> lIt = mInFlightPackets.iterator();
 		while (lIt.hasNext()) {
 			Packet lPacket = lIt.next();
 			long lPacketStartTime = lPacket.getStartTime();
-			if (lPacketStartTime + PACKET_MAX_WAIT_TIME < System.currentTimeMillis()) {
-				// packet timeout
-				// remove this packet from the list
-				lIt.remove();
+			if (lPacketStartTime + Packet.PACKET_MAX_WAIT_TIME < System.currentTimeMillis()) {
 				// send it back and restart its timer
 				sendPacket(lPacket);
-				lPacketsToReAdd.add(lPacket);
 			}
 		}
-		mInFlightPackets.addAll(lPacketsToReAdd);
 	}
 
 	private int actUponPacketReceived(byte[] aPacket) {
 		
 		ByteBuffer lBuffer = ByteBuffer.wrap(aPacket);
-		int lPacketType = aPacket[0];
-		int lReceivedSequenceNumber = lBuffer.getInt(1);
+		int lPacketType = lBuffer.get();
+		int lReceivedSequenceNumber = lBuffer.getInt();
+		// advancing the buffer position for the payload
+		lBuffer.getInt();
+		lBuffer.getShort();
+		
 
 		if (lPacketType == Packet.PACKET_TYPE_SYN) {
 			// send SYN ACK
 			Packet.Builder lPacketBuilder = new Packet.Builder();
 			lPacketBuilder.setType(Packet.PACKET_TYPE_SYN_ACK);
-			mCurrentSequenceNumber = lReceivedSequenceNumber + 1;
-			lPacketBuilder.setSequenceNumber(mCurrentSequenceNumber);
+			lPacketBuilder.setSequenceNumber(lReceivedSequenceNumber+1);
 			lPacketBuilder.setPeerAddress(mRecvAddress);
-			lPacketBuilder.setPortNumber(mClientPort);
+			lPacketBuilder.setPortNumber(CLIENT_PORT);
 			lPacketBuilder.setPayload(new byte[0]);
 			Packet lPacket = lPacketBuilder.create();
 			byte[] lPacketContent = lPacket.toBytes();
 			DatagramPacket lDatagramPacket = new DatagramPacket(lPacketContent, lPacketContent.length,
-					lPacket.getPeerAddress(), lPacket.getPeerPort());
+					lPacket.getPeerAddress(), 3001);
 			try {
 				mServerDatagramSocket.send(lDatagramPacket);
 			} catch (IOException e) {
@@ -185,11 +192,6 @@ public class Server {
 
 		}
 		else if (lPacketType == Packet.PACKET_TYPE_ACK) {
-			if (!mConnectionEstablished) {
-				// for the first ack
-				mConnectionEstablished = true;
-				return lPacketType;
-			}
 			
 			ackSentPacket(lReceivedSequenceNumber);
 			
@@ -197,9 +199,27 @@ public class Server {
 			
 		}
 		else if (lPacketType == Packet.PACKET_TYPE_DATA) {
+			if (mFirstDataPacket) {
+				mInFlightPackets.remove(0); // removing the syn-ack packet
+				mFirstDataPacket = false;
+			}
+			// first acknowledge what the client just sent
+			Packet.Builder lPacketBuilder = new Packet.Builder();
+			lPacketBuilder.setType(Packet.PACKET_TYPE_ACK);
+			lPacketBuilder.setSequenceNumber(lReceivedSequenceNumber+Packet.MAX_PAYLOAD_SIZE);
+			lPacketBuilder.setPeerAddress(mRecvAddress);
+			lPacketBuilder.setPortNumber(CLIENT_PORT);
+			lPacketBuilder.setPayload(new byte[0]);
+			Packet lPacket = lPacketBuilder.create();
+			sendPacket(lPacket);
+			addInFlightList(lPacket);
+			
+			//mCurrentSequenceNumber = lReceivedSequenceNumber;
+			
 			// process what the user is requesting
+			/* not adapted for post */
 			byte[] lRcvPacketPayload = new byte[Packet.MAX_PAYLOAD_SIZE]; // 1013
-			lBuffer.get(lRcvPacketPayload, 11, lRcvPacketPayload.length);
+			lBuffer.get(lRcvPacketPayload, 0, lRcvPacketPayload.length);
 			String lPayloadInString = new String(lRcvPacketPayload, StandardCharsets.UTF_8);
 			String lRequestLine = lPayloadInString.substring(0, lPayloadInString.indexOf("\r\n"));
 			if (lRequestLine.startsWith("GET")) {
@@ -216,17 +236,41 @@ public class Server {
 	}
 	
 	private void ackSentPacket(int lReceivedSequenceNumber) {
+	
+		boolean lMustSendFin = false;
 		Iterator<Packet> lIt = mInFlightPackets.iterator();
 		while (lIt.hasNext()) {
 			Packet lPacket = lIt.next();
-			if (lPacket.getSequenceNumber() == lReceivedSequenceNumber) {
+			if (lPacket.getSequenceNumber() + Packet.MAX_PAYLOAD_SIZE == lReceivedSequenceNumber) {
 				lIt.remove();
+				if (mLastSequenceNumber == lReceivedSequenceNumber) {
+					// client acknowledged last packet server sent
+					lMustSendFin = true;
+				}
 			}
 		}
 		
+		if (lMustSendFin) {
+			System.out.println("Client acknowledged last packet, now sending fin");
+			sendFin();
+			mFinSentTime = System.currentTimeMillis();
+		}
+		
+		
+		
 	}
 
-
+	private void sendFin() {
+		Packet.Builder lPB = new Packet.Builder();
+		lPB.setType(Packet.PACKET_TYPE_FIN);
+		lPB.setPeerAddress(mRecvAddress);
+		lPB.setPortNumber(CLIENT_PORT);
+		lPB.setSequenceNumber(mCurrentSequenceNumber);
+		lPB.setPayload(new byte[0]);
+		Packet lPacket = lPB.create();
+		sendPacket(lPacket);
+		addInFlightList(lPacket);
+	}
 	// requirement 1 
 	private void getFiles(Writer aWriter) {
 		String lBody = "";
@@ -360,13 +404,15 @@ public class Server {
 		
 		while (lBodyRead < lBodyLength) {
 			int lToReadFromBuffer = lBodyBuffer.remaining() % (Packet.MAX_PAYLOAD_SIZE - lReservedHeaderSpace);
-			Packet lPacket = makePacket(lBodyBuffer, lToReadFromBuffer);
+			Packet lPacket = makePacketListFiles(lBodyBuffer, lToReadFromBuffer);
 			lBodyRead += lToReadFromBuffer;
 			sendPacket(lPacket);
 			addInFlightList(lPacket);
 			
 		}
 		
+		
+		mLastSequenceNumber = mCurrentSequenceNumber;
 
 	}
 			
@@ -376,13 +422,15 @@ public class Server {
 		
 	}
 
-	private Packet makePacket(ByteBuffer aSrc, int aToReadFromBuffer) {
+	private Packet makePacketListFiles(ByteBuffer aSrc, int aToReadFromBuffer) {
 		Packet.Builder lPacketBuilder = new Packet.Builder();
 		lPacketBuilder.setType(Packet.PACKET_TYPE_DATA);
-		mCurrentSequenceNumber = mCurrentSequenceNumber + 1;
-		lPacketBuilder.setSequenceNumber(mCurrentSequenceNumber);
+		lPacketBuilder.setSequenceNumber(mCurrentSequenceNumber); 
+		mCurrentSequenceNumber = mCurrentSequenceNumber + Packet.MAX_PAYLOAD_SIZE;
+		//mCurrentSequenceNumber = mCurrentSequenceNumber + Packet.MAX_LEN;
+		
 		lPacketBuilder.setPeerAddress(mRecvAddress);
-		lPacketBuilder.setPortNumber(mClientPort);
+		lPacketBuilder.setPortNumber(CLIENT_PORT);
 		ByteBuffer lPayloadBuffer = ByteBuffer.allocate(Packet.MAX_PAYLOAD_SIZE);
 		StringBuilder lHttpHeaders = new StringBuilder();
 		lHttpHeaders.append(STATUS_LINE_200)
@@ -400,16 +448,16 @@ public class Server {
 	}
 	
 	private void sendPacket(Packet aPacket) {
-		DatagramPacket lDP = new DatagramPacket(aPacket.getPayload(), aPacket.getPayload().length
-				, mRecvAddress, mClientPort);
+		DatagramPacket lDP = new DatagramPacket(aPacket.toBytes(), aPacket.toBytes().length
+				, mRecvAddress, 3001);
 		try {
 			mServerDatagramSocket.send(lDP);
+			// set start time of packet
+			aPacket.setStartTime(System.currentTimeMillis());
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		// set start time of packet
-		aPacket.setStartTime(System.currentTimeMillis());
 		
 	}
 	// helpers section

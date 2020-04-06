@@ -34,7 +34,7 @@ public class GetRequest extends Request {
 	
 	public static String getURIfromStringRequestLine(String aRequestLine) {
 		String lGETtrimmed = aRequestLine.substring(4); // trimming the GET
-		String lRequestURI = lGETtrimmed.substring(0, lGETtrimmed.charAt(' '));
+		String lRequestURI = lGETtrimmed.substring(0, lGETtrimmed.indexOf(' '));
 		return lRequestURI;
 	}
 

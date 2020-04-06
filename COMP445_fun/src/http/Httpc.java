@@ -11,15 +11,24 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 
 import org.apache.commons.cli.*;
 
+
 public class Httpc {
 	
 	private static final int ROUTER_PORT = 3000;
+	private static ArrayList<Packet> mInFlightPackets;
+	
+	public Httpc() {
+		mInFlightPackets = new ArrayList<Packet>();
+	}
 
 	public static void main(String[] aArgs) {
 		boolean lUDPSwitch = false;
@@ -281,28 +290,31 @@ public class Httpc {
 	    } else {
 	    	// udp mode client side
 	    	int lMyPort = 3000; // local
-	    	DatagramSocket lDatagramSocket = null;
-	    	try {
-	    		lDatagramSocket = new DatagramSocket(lMyPort);
-			} catch (SocketException e) {
+	    	int lServerPort = 4000;
+	    	InetAddress lLocalHost = null;
+			try {
+				lLocalHost = InetAddress.getLocalHost();
+			} catch (UnknownHostException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
-				System.exit(1);
 			}
-	    	// get or post
-	    	// first the send http request
+	    	UDPClient lClient = null;
 	    	if (lArg0.equals("get")) {
 	    		GetRequest lReq = new GetRequest();
 				lReq.setURI(Request.getPathFromUrl(lUrl));
 				setHeadersOnRequest(lCommandLine, lReq);
-				executeGetUDP(lReq, lDatagramSocket);
+				lClient = new UDPClient(lMyPort, lServerPort, lLocalHost, lReq);
+				if (lReq.getURI().equals("/")) {
+					lClient.executeGetRoot();
+				} else {
+					// get file
+				}
 			
 	    	}
 	    	else if (lArg0.equals("post")) {
 	    		
 	    	}
 	    	
-	    	//DatagramPacket lDP = new DatagramPacket();
 	    	
 	    }
 	   
@@ -318,36 +330,125 @@ public class Httpc {
 		}
 	}
 	
-	private static void executeGetUDP(GetRequest aRequest, DatagramSocket aDatagramSocket) {
-		// make a SYNC packet with 0 payload
-		// to start the communication
-		InetAddress lLocalhost = null;
-		try {
-			lLocalhost = InetAddress.getLocalHost();
-		} catch (UnknownHostException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		Packet.Builder lPacketBuilder = new Packet.Builder();
-		lPacketBuilder.setType(Packet.PACKET_TYPE_SYN);
-		lPacketBuilder.setSequenceNumber(0);
-		lPacketBuilder.setPeerAddress(lLocalhost);
-		lPacketBuilder.setPortNumber(aDatagramSocket.getPort());
-		// we gotta make sure the payload doesn't overflow packet size
-//		byte[] lPayload = aRequest.assembleRequest().getBytes();
-//		int lPayloadLength = lPayload.length;
-//		if (lPayloadLength > Packet.MAX_LEN) {
-//			// chunk it
-//			
+//	private static void executeGetRootUDP(GetRequest aRequest, DatagramSocket aDatagramSocket) {
+//		
+//		// make a SYNC packet with 0 payload
+//		// to start the communication
+//		InetAddress lLocalhost = null;
+//		try {
+//			lLocalhost = InetAddress.getLocalHost();
+//		} catch (UnknownHostException e) {
+//			// TODO Auto-generated catch block
+//			e.printStackTrace();
 //		}
-		byte[] lEmpty = null;
-		lPacketBuilder.setPayload(lEmpty);
-		Packet lPacket = lPacketBuilder.create();
-		byte[] lPacketBytes = lPacket.toBytes();
-		DatagramPacket lDatagramPacket = new DatagramPacket(lPacketBytes, lPacketBytes.length,
-				lPacket.getPeerAddress(), lPacket.getPeerPort());
-		
-		
-	}
+//		Packet.Builder lPacketBuilder = new Packet.Builder();
+//		lPacketBuilder.setType(Packet.PACKET_TYPE_SYN);
+//		lPacketBuilder.setSequenceNumber(0);
+//		lPacketBuilder.setPeerAddress(lLocalhost);
+//		int lServerPort = 4000;
+//		lPacketBuilder.setPortNumber(lServerPort);
+//	
+//		byte[] lEmpty = new byte[0];
+//		lPacketBuilder.setPayload(lEmpty);
+//		Packet lPacket = lPacketBuilder.create();
+//		byte[] lPacketBytes = lPacket.toBytes();
+//		DatagramPacket lDatagramToSend = new DatagramPacket(lPacketBytes, lPacketBytes.length,
+//				lPacket.getPeerAddress(), lPacket.getPeerPort());
+//		try {
+//			aDatagramSocket.send(lDatagramToSend);
+//		} catch (IOException e) {
+//			// TODO Auto-generated catch block
+//			e.printStackTrace();
+//		}
+//		/* glue */
+//		lPacket.setStartTime(System.currentTimeMillis());
+//		mInFlightPackets.add(lPacket);
+//		/* end glue */
+//		
+//		byte[] lDatagramContainer = new byte[Packet.MAX_LEN];
+//		DatagramPacket lDatagramToReceive = new DatagramPacket(lDatagramContainer, Packet.MAX_LEN);
+//		int lSocketTimeout = 200; 
+//		try {
+//			aDatagramSocket.setSoTimeout(lSocketTimeout);
+//		} catch (SocketException e1) {
+//			// TODO Auto-generated catch block
+//			e1.printStackTrace();
+//		}
+//		while (true) {
+//			try {
+//				aDatagramSocket.receive(lDatagramToReceive);
+//			} catch (IOException e) {
+//				
+//				System.out.println("Receive timeout");
+//				resendTimeOutPackets();
+//				e.printStackTrace();
+//			}
+//			
+//			ByteBuffer lByteBuffer = ByteBuffer.wrap(lDatagramContainer);
+//			int lPacketType = lByteBuffer.get();
+//			if (lPacketType == Packet.PACKET_TYPE_SYN_ACK) {
+//				// ack the syn ack
+//				lPacketBuilder.setType(Packet.PACKET_TYPE_ACK);
+//				int lNextSequenceNumber = lByteBuffer.getInt(1) + 1; 
+//				lPacketBuilder.setSequenceNumber(lNextSequenceNumber);
+//				lPacket = lPacketBuilder.create();
+//				// payload already empty
+//				lPacketBytes = lPacket.toBytes();
+//				lDatagramToSend = new DatagramPacket(lPacketBytes, lPacketBytes.length,
+//						lPacket.getPeerAddress(), lPacket.getPeerPort());
+//				try {
+//					aDatagramSocket.send(lDatagramToSend);
+//				} catch (IOException e) {
+//					// TODO Auto-generated catch block
+//					e.printStackTrace();
+//				}
+//				
+//				// ask for what I need the list of files
+//				lPacketBuilder.setType(Packet.PACKET_TYPE_DATA);
+//				lNextSequenceNumber = lNextSequenceNumber + 1;
+//				lPacketBuilder.setSequenceNumber(lNextSequenceNumber);
+//				// constructing the payload
+//				byte[] lPayload = aRequest.assembleRequest().getBytes();
+//				if (lPayload.length > Packet.MAX_LEN) {
+//					// chunk it
+//				}
+//				else {
+//					lPacketBuilder.setPayload(lPayload);
+//				}
+//				lPacketBytes = lPacketBuilder.create().toBytes();
+//				lDatagramToSend = new DatagramPacket(lPacketBytes, lPacketBytes.length);
+//				
+//				try {
+//					aDatagramSocket.send(lDatagramToSend);
+//				} catch (IOException e) {
+//					// TODO Auto-generated catch block
+//					e.printStackTrace();
+//				}
+//				
+//			}
+//		}
+//	
+//	}
+////	
+//	private void resentTimeoutPackets() {
+//		ArrayList<Packet> lPacketsToReAdd = new ArrayList<Packet>();
+//		Iterator<Packet> lIt = mInFlightPackets.iterator();
+//		while (lIt.hasNext()) {
+//			Packet lPacket = lIt.next();
+//			long lPacketStartTime = lPacket.getStartTime();
+//			if (lPacketStartTime + Packet.PACKET_MAX_WAIT_TIME < System.currentTimeMillis()) {
+//				// packet timeout
+//				// remove this packet from the list
+//				lIt.remove();
+//				// send it back and restart its timer
+//				sendPacket(lPacket);
+//				lPacketsToReAdd.add(lPacket);
+//			}
+//		}
+//		mInFlightPackets.addAll(lPacketsToReAdd);
+//	}
+//	
+
+	
 
 }

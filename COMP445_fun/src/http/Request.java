@@ -49,6 +49,9 @@ public abstract class Request {
 		mPath = aURI;
 	}
 	
+	public String getURI() {
+		return mPath;
+	}
 	public void setHost(String aHost) {
 		mHost = aHost;
 	}

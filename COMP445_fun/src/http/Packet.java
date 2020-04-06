@@ -21,6 +21,7 @@ public class Packet {
     public static final int PACKET_TYPE_FIN = 4;
     public static final int PACKET_TYPE_FIN_ACK = 5;
     public static final int PACKET_TYPE_DATA = 6;
+    public static final int PACKET_MAX_WAIT_TIME = 200;
 
     private final int type;
     private final long sequenceNumber;
